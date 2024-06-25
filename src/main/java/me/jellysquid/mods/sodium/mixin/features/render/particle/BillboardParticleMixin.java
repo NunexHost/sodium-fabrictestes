@@ -5,14 +5,10 @@ import net.caffeinemc.mods.sodium.api.vertex.buffer.VertexBufferWriter;
 import net.caffeinemc.mods.sodium.api.util.ColorABGR;
 import net.minecraft.client.particle.BillboardParticle;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.lwjgl.system.MemoryStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
@@ -36,10 +32,13 @@ public abstract class BillboardParticleMixin extends Particle {
     protected abstract float getMaxV();
 
     @Unique
-    private Vector3f transferVector = new Vector3f();
+    private Vector3f[] vertices = new Vector3f[4];
 
     protected BillboardParticleMixin(ClientWorld level, double x, double y, double z) {
         super(level, x, y, z);
+        for (int i = 0; i < 4; i++) {
+            vertices[i] = new Vector3f();
+        }
     }
 
     /**
@@ -55,37 +54,49 @@ public abstract class BillboardParticleMixin extends Particle {
         float maxV = this.getMaxV();
         int light = this.getBrightness(tickDelta);
 
-        var writer = VertexBufferWriter.of(vertexConsumer);
-
         int color = ColorABGR.pack(this.red, this.green, this.blue, this.alpha);
 
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            long buffer = stack.nmalloc(4 * ParticleVertex.STRIDE);
-            long ptr = buffer;
+        // Initialize the writer outside the loop
+        VertexBufferWriter writer = VertexBufferWriter.of(vertexConsumer);
 
-            this.writeVertex(ptr, quaternionf, x, y, z, 1.0F, -1.0F, size, maxU, maxV, color, light);
-            ptr += ParticleVertex.STRIDE;
+        // Pre-calculate some constants
+        float sizeU = maxU - minU;
+        float sizeV = maxV - minV;
 
-            this.writeVertex(ptr, quaternionf, x, y, z, 1.0F, 1.0F, size, maxU, minV, color, light);
-            ptr += ParticleVertex.STRIDE;
+        // Loop to write vertices
+        for (int i = 0; i < 4; i++) {
+            float posX, posY;
+            switch (i) {
+                case 0:
+                    posX = 1.0F;
+                    posY = -1.0F;
+                    break;
+                case 1:
+                    posX = 1.0F;
+                    posY = 1.0F;
+                    break;
+                case 2:
+                    posX = -1.0F;
+                    posY = 1.0F;
+                    break;
+                case 3:
+                    posX = -1.0F;
+                    posY = -1.0F;
+                    break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + i);
+            }
 
-            this.writeVertex(ptr, quaternionf, x, y, z, -1.0F, 1.0F, size, minU, minV, color, light);
-            ptr += ParticleVertex.STRIDE;
+            Vector3f transferVector = vertices[i];
+            transferVector.set(posX, posY, 0.0f);
+            transferVector.rotate(quaternionf);
+            transferVector.mul(size);
+            transferVector.add(x, y, z);
 
-            this.writeVertex(ptr, quaternionf, x, y, z, -1.0F, -1.0F, size, minU, maxV, color, light);
-            ptr += ParticleVertex.STRIDE;
-
-            writer.push(stack, buffer, 4, ParticleVertex.FORMAT);
+            long ptr = writer.allocate(ParticleVertex.STRIDE);
+            ParticleVertex.put(ptr, transferVector.x(), transferVector.y(), transferVector.z(),
+                               minU + sizeU * (posX + 1.0F) / 2.0F, minV + sizeV * (posY + 1.0F) / 2.0F,
+                               color, light);
         }
-    }
-
-    @Unique
-    private void writeVertex(long ptr, Quaternionf quaternionf, float originX, float originY, float originZ, float posX, float posY, float size, float u, float v, int color, int light) {
-        transferVector.set(posX, posY, 0.0f);
-        transferVector.rotate(quaternionf);
-        transferVector.mul(size);
-        transferVector.add(originX, originY, originZ);
-
-        ParticleVertex.put(ptr, transferVector.x(), transferVector.y(), transferVector.z(), u, v, color, light);
     }
 }
