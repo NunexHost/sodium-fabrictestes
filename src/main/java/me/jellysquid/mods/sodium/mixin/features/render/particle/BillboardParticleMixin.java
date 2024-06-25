@@ -1,7 +1,6 @@
 package me.jellysquid.mods.sodium.mixin.features.render.particle;
 
 import net.caffeinemc.mods.sodium.api.vertex.format.common.ParticleVertex;
-import net.caffeinemc.mods.sodium.api.vertex.buffer.VertexBufferWriter;
 import net.caffeinemc.mods.sodium.api.util.ColorABGR;
 import net.minecraft.client.particle.BillboardParticle;
 import net.minecraft.client.particle.Particle;
@@ -43,7 +42,6 @@ public abstract class BillboardParticleMixin extends Particle {
 
     /**
      * @reason Optimize function
-     * @author JellySquid
      */
     @Overwrite
     protected void method_60374(VertexConsumer vertexConsumer, Quaternionf quaternionf, float x, float y, float z, float tickDelta) {
@@ -55,13 +53,6 @@ public abstract class BillboardParticleMixin extends Particle {
         int light = this.getBrightness(tickDelta);
 
         int color = ColorABGR.pack(this.red, this.green, this.blue, this.alpha);
-
-        // Initialize the writer outside the loop
-        VertexBufferWriter writer = VertexBufferWriter.of(vertexConsumer);
-
-        // Pre-calculate some constants
-        float sizeU = maxU - minU;
-        float sizeV = maxV - minV;
 
         // Loop to write vertices
         for (int i = 0; i < 4; i++) {
@@ -93,10 +84,9 @@ public abstract class BillboardParticleMixin extends Particle {
             transferVector.mul(size);
             transferVector.add(x, y, z);
 
-            long ptr = writer.allocate(ParticleVertex.STRIDE);
-            ParticleVertex.put(ptr, transferVector.x(), transferVector.y(), transferVector.z(),
-                               minU + sizeU * (posX + 1.0F) / 2.0F, minV + sizeV * (posY + 1.0F) / 2.0F,
-                               color, light);
+            ParticleVertex.put(vertexConsumer, transferVector.x(), transferVector.y(), transferVector.z(),
+                    minU + (maxU - minU) * (posX + 1.0F) / 2.0F, minV + (maxV - minV) * (posY + 1.0F) / 2.0F,
+                    color, light);
         }
     }
 }
